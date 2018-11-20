@@ -13,7 +13,25 @@ library(tidyverse)
 
 The Washington Post has gathered data on homicides in 50 large U.S. cities and made the data available through a GitHub repository. You can read their accompanying article.
 
-Create a city_state variable (e.g. “Baltimore, MD”), and a binary variable indicating whether the homicide is solved. Omit cities Dallas, TX; Phoenix, AZ; and Kansas City, MO – these don’t report victim race. Also omit Tulsa, AL – this is a data entry mistake. Modifiy victim_race to have categories white and non-white, with white as the reference category. Be sure that  victim_age is numeric.
+```{r data import}
+homicide = read_csv("./data/homicide-data.csv") %>% 
+  janitor::clean_names()
+
+homicide
+```
+
+Create a city_state variable (e.g. “Baltimore, MD”), and a binary variable indicating whether the homicide is solved. Omit cities Dallas, TX; Phoenix, AZ; and Kansas City, MO – these don’t report victim race. Also omit Tulsa, AL – this is a data entry mistake. Modifiy victim_race to have categories white and non-white, with white as the reference category. Be sure that victim_age is numeric.
+
+```{r data wrangling}
+homi = homicide %>% 
+  unite(city_state, city, state, sep = ", ") %>% # create a 'city_state' variable
+  mutate(solved = ifelse(disposition == "Open/No arrest", 0, 1)) %>% # create a binary variable indicating whether homicide is solved (1: Closed without arrest/Closed by arrest; 0: Open/No arrest)
+  filter(!(city_state %in% c("Dallas, TX", "Phoenix, AZ", "Kansas City, MO", "Tulsa, AL"))) %>% # omit cities that don't report victim race or is a mistake
+  mutate(victim_race = ifelse(victim_race == "White", "white", "non-white")) %>% # modify 'victim_race' to have categories
+  mutate(victim_age = suppressWarnings(as.numeric(victim_age)))
+
+homi
+```
 
 For the city of Baltimore, MD, use the glm function to fit a logistic regression with resolved vs unresolved as the outcome and victim age, sex and race (as just defined) as predictors. Save the output of glm as an R object; apply the broom::tidy to this object; and obtain the estimate and confidence interval of the adjusted odds ratio for solving homicides comparing non-white victims to white victims keeping all other variables fixed.
 

@@ -24,10 +24,11 @@ Create a city_state variable (e.g. “Baltimore, MD”), and a binary variable i
 
 ```{r data wrangling}
 homi = homicide %>% 
-  unite(city_state, city, state, sep = ", ") %>% # create a 'city_state' variable
-  mutate(solved = ifelse(disposition == "Open/No arrest", 0, 1)) %>% # create a binary variable indicating whether homicide is solved (1: Closed without arrest/Closed by arrest; 0: Open/No arrest)
-  filter(!(city_state %in% c("Dallas, TX", "Phoenix, AZ", "Kansas City, MO", "Tulsa, AL"))) %>% # omit cities that don't report victim race or is a mistake
+  unite(city_state, city, state, sep = ", ") %>% 
+  mutate(solved = ifelse(disposition == "Open/No arrest", 0, 1)) %>% # 1: Closed without arrest/Closed by arrest; 0: Open/No arrest
+  filter(!(city_state %in% c("Dallas, TX", "Phoenix, AZ", "Kansas City, MO", "Tulsa, AL"))) %>% 
   mutate(victim_race = ifelse(victim_race == "White", "white", "non-white")) %>% # modify 'victim_race' to have categories
+  mutate(victim_race = forcats::fct_relevel(victim_race, ref = "white")) %>% # with white as the reference category
   mutate(victim_age = suppressWarnings(as.numeric(victim_age)))
 
 homi
@@ -35,9 +36,78 @@ homi
 
 For the city of Baltimore, MD, use the glm function to fit a logistic regression with resolved vs unresolved as the outcome and victim age, sex and race (as just defined) as predictors. Save the output of glm as an R object; apply the broom::tidy to this object; and obtain the estimate and confidence interval of the adjusted odds ratio for solving homicides comparing non-white victims to white victims keeping all other variables fixed.
 
+```{r Baltimore}
+baltimore = homi %>% 
+  filter(city_state == "Baltimore, MD")
+
+reg_baltimore = glm(solved~victim_age+victim_sex+victim_race, family = binomial(link = "logit"), data = baltimore)
+
+OR_CI = rbind(exp(confint(reg_baltimore, "victim_racenon-white")))
+
+reg_baltimore %>%  
+  broom::tidy() %>% 
+  filter(term == "victim_racenon-white") %>% 
+  mutate(OR_estimate = exp(estimate), OR_CI_low = OR_CI[1], OR_CI_up = OR_CI[2]) %>%
+  select(term, logOR_estimate = estimate, OR_estimate, OR_CI_low, OR_CI_up, p.value)
+
+#baltimore %>% 
+  #modelr::add_predictions(reg_baltimore) %>% 
+  #mutate(fitted_prob = boot::inv.logit(pred))
+```
+
+
 Now run glm for each of the cities in your dataset, and extract the adjusted odds ratio (and CI) for solving homicides comparing non-white victims to white victims. Do this within a “tidy” pipeline, making use of purrr::map, list columns, and unnest as necessary to create a dataframe with estimated ORs and CIs for each city.
 
+```{r every city, message = FALSE, warning = FALSE}
+or_ci = function(city){
+  city_info = homi %>% 
+    filter(city_state == city)
+  
+  reg_city = glm(solved~victim_age+victim_sex+victim_race, family = binomial(link = "logit"), data = city_info)
+  
+  tidy_city = reg_city %>% 
+    broom::tidy() %>% 
+    filter(term == "victim_racenon-white")
+  
+  OR_estimate = exp(tidy_city$estimate)
+  OR_CI = rbind(exp(confint(reg_city, "victim_racenon-white")))
+  
+  return(tibble(
+    OR_estimate,
+    OR_CI_low = OR_CI[1],
+    OR_CI_up = OR_CI[2]
+  ))
+}
+
+OR_CI_city = homi %>% 
+  group_by(city_state) %>% 
+  nest() %>% 
+  mutate(info = map(city_state, or_ci)) %>% 
+  select(city_state, info) %>% 
+  unnest()
+
+OR_CI_city %>% 
+  knitr::kable(digits = 5)
+  
+```
+
 Create a plot that shows the estimated ORs and CIs for each city. Organize cities according to estimated OR, and comment on the plot.
+
+```{r plot}
+OR_CI_city %>% 
+  mutate(city_state = fct_reorder(city_state, OR_estimate)) %>% 
+  ggplot(aes(x = city_state, y = OR_estimate)) +
+  geom_point() +
+  geom_errorbar(aes(x = city_state, ymin = OR_CI_low, ymax = OR_CI_up), width = 0.2, alpha = 0.5) + # add error bars based on upper and lower limits of CI for each city
+  labs(
+    title = "Estimates and CIs for each city",
+    x = "City",
+    y = "Estimate and CI"
+  ) +
+  theme(axis.text.x = element_text(size = 8, angle = 45, hjust = 1),
+        axis.text.y = element_text(size = 10)) # make city_state names readable
+```
+
 
 
 # Problem 2

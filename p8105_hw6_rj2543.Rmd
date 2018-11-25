@@ -7,6 +7,14 @@ output: github_document
 
 ```{r setup, include=FALSE}
 library(tidyverse)
+library(modelr)
+library(mgcv)
+
+#library(HH)
+#library("leaps")
+#library(purrr)
+
+set.seed(1)
 ```
 
 # Problem 1
@@ -156,14 +164,99 @@ In this probelm, you will analyze data gathered to understand the effects of sev
 
 Load and clean the data for regression analysis (i.e. convert numeric to factor where appropriate, check for missing data, etc.).
 
+```{r data import and clean}
+birthweight = read_csv("./data/birthweight.csv") %>% 
+  janitor::clean_names() %>% 
+  mutate(babysex = as.factor(babysex), frace = as.factor(frace), malform = as.factor(malform), mrace = as.factor(mrace))
+
+birthweight
+```
+
+
 Propose a regression model for birthweight. This model may be based on a hypothesized structure for the factors that underly birthweight, on a data-driven model-building process, or a combination of the two. Describe your modeling process and show a plot of model residuals against fitted values – use add_predictions and add_residuals in making this plot.
+
+```{r regression}
+birthweight %>% 
+  ggplot(aes(x = bwt)) +
+  geom_histogram()
+
+reg = lm(bwt~., data = birthweight)
+
+summary(reg)
+
+reg_stepwise = step(reg, direction = "both")
+
+summary(reg_stepwise)
+
+reg_bwt = lm(bwt~babysex+bhead+blength+delwt+gaweeks+mheight+mrace+ppwt+smoken, data = birthweight)
+
+summary(reg_bwt)
+
+birthweight %>% 
+  modelr::add_residuals(., reg_bwt) %>% 
+  modelr::add_predictions(., reg_bwt) %>% 
+  ggplot(aes(x = pred, y = resid)) +
+  geom_point(alpha = 0.5, size = 1) +
+  geom_abline(aes(slope = 0, intercept = 0), color = "blue")
+
+```
+
 
 Compare your model to two others:
 
 * One using length at birth and gestational age as predictors (main effects only)
 
-* One using head circumference, length, sex, and all interactions (including the three-way interaction) between these
+```{r blength and gaweeks}
+reg1 = lm(bwt~blength+gaweeks, data = birthweight)
+
+summary(reg1)
+
+reg1 %>% 
+  broom::tidy()
+
+cv_df = crossv_mc(birthweight, 100) %>% 
+  mutate(reg_mod = map(train, ~lm(bwt~babysex+bhead+blength+delwt+gaweeks+mheight+mrace+ppwt+smoken, data = .x)),
+         reg1_mod = map(train, ~lm(bwt~blength+gaweeks, data = .x))) %>% 
+  mutate(rmse_reg = map2_dbl(reg_mod, test, ~rmse(model = .x, data = .y)),
+         rmse_reg1 = map2_dbl(reg1_mod, test, ~rmse(model = .x, data = .y)))
+
+cv_df %>% 
+  select(rmse_reg, rmse_reg1) %>%  
+  gather(key = model, value = rmse) %>% 
+  mutate(model = str_replace(model, "rmse_", ""),
+         model = fct_inorder(model)) %>% 
+  ggplot(aes(x = model, y = rmse)) + 
+  geom_violin()
+```
+
+
+* One using head circumference, length, sex, and all interactions (including the three-way interaction) between these.
+
 Make this comparison in terms of the cross-validated prediction error; use crossv_mc and functions in purrr as appropriate.
+
+```{r}
+reg2 = lm(bwt~bhead*blength*babysex, data = birthweight)
+
+summary(reg2)
+
+reg2 %>% 
+  broom::tidy()
+
+cv_df = crossv_mc(birthweight, 100) %>% 
+  mutate(reg_mod = map(train, ~lm(bwt~babysex+bhead+blength+delwt+gaweeks+mheight+mrace+ppwt+smoken, data = .x)),
+         reg2_mod = map(train, ~lm(bwt~bhead*blength*babysex, data = .x))) %>% 
+  mutate(rmse_reg = map2_dbl(reg_mod, test, ~rmse(model = .x, data = .y)),
+         rmse_reg2 = map2_dbl(reg2_mod, test, ~rmse(model = .x, data = .y)))
+
+cv_df %>% 
+  select(rmse_reg, rmse_reg2) %>%  
+  gather(key = model, value = rmse) %>% 
+  mutate(model = str_replace(model, "rmse_", ""),
+         model = fct_inorder(model)) %>% 
+  ggplot(aes(x = model, y = rmse)) + 
+  geom_violin()
+```
+
 
 Note that although we expect your model to be reasonable, model building itself is not a main idea of the course and we don’t necessarily expect your model to be “optimal”.
 

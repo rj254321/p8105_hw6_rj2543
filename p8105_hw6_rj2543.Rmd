@@ -23,7 +23,7 @@ The Washington Post has gathered data on homicides in 50 large U.S. cities and m
 
 ```{r data import}
 homicide = read_csv("./data/homicide-data.csv") %>% 
-  janitor::clean_names()
+  janitor::clean_names() 
 
 homicide
 ```
@@ -48,7 +48,7 @@ For the city of Baltimore, MD, use the glm function to fit a logistic regression
 baltimore = homi %>% 
   filter(city_state == "Baltimore, MD")
 
-reg_baltimore = glm(solved~victim_age+victim_sex+victim_race, family = binomial(link = "logit"), data = baltimore)
+reg_baltimore = glm(solved~victim_age+victim_sex+victim_race, family = binomial(link = "logit"), data = baltimore) 
 
 OR_CI = rbind(exp(confint(reg_baltimore, "victim_racenon-white")))
 
@@ -56,7 +56,8 @@ reg_baltimore %>%
   broom::tidy() %>% 
   filter(term == "victim_racenon-white") %>% 
   mutate(OR_estimate = exp(estimate), OR_CI_low = OR_CI[1], OR_CI_up = OR_CI[2]) %>%
-  select(term, logOR_estimate = estimate, OR_estimate, OR_CI_low, OR_CI_up, p.value)
+  select(term, OR_estimate, OR_CI_low, OR_CI_up) %>% 
+  knitr::kable(digits = 5)
 
 #baltimore %>% 
   #modelr::add_predictions(reg_baltimore) %>% 
@@ -108,7 +109,7 @@ OR_CI_city %>%
   geom_point() +
   geom_errorbar(aes(x = city_state, ymin = OR_CI_low, ymax = OR_CI_up), width = 0.2, alpha = 0.5) + # add error bars based on upper and lower limits of CI for each city
   labs(
-    title = "Estimates and CIs for each city",
+    title = "OR for solving homicides comparing non-white victims to white victims",
     x = "City",
     y = "Estimate and CI"
   ) +
@@ -116,7 +117,8 @@ OR_CI_city %>%
         axis.text.y = element_text(size = 10)) # make city_state names readable
 ```
 
-
+**Comments**
+From the plot, we can see that estimates of adjusted OR range from about 0.1 to round 1.1. Most of estimates are under 1 (about 3/4 cities with estimates between 0.25 and 0.75) showing that homicides with non-white victims tend to be unsolved compared to those with white victims. Richmond, Savannah, San Bernardino, Durham, Birmingham and Tampa have significantly wider CIs than other cities.
 
 # Problem 2
 
@@ -182,8 +184,6 @@ birthweight %>%
 
 reg = lm(bwt~., data = birthweight)
 
-summary(reg)
-
 reg_stepwise = step(reg, direction = "both")
 
 summary(reg_stepwise)
@@ -201,6 +201,8 @@ birthweight %>%
 
 ```
 
+**Modeling Process**
+First, from the bwt distribution plot, we can see that the underlying distribution tends to be a bell-shaped and slightly skewed one. Transformation of bwt seems unnecessary at this point. Then, we try to fit the model with no interaction terms using "stepwise" model selection methods. By only taking predictors with significantly small p-value into consideration, we come to the model with babysex, bhead, blength, delwt, gaweeks, mheight, mrace, ppwt and smoken predictors. The adjusted R-square of this model is about 0.7173 which looks fair at this time. The plot of model residuals against fitted values shows that the assumption of the model seems satisfied as well. However, it may be better to include the interaction effects in further study. 
 
 Compare your model to two others:
 
@@ -213,43 +215,34 @@ summary(reg1)
 
 reg1 %>% 
   broom::tidy()
-
-cv_df = crossv_mc(birthweight, 100) %>% 
-  mutate(reg_mod = map(train, ~lm(bwt~babysex+bhead+blength+delwt+gaweeks+mheight+mrace+ppwt+smoken, data = .x)),
-         reg1_mod = map(train, ~lm(bwt~blength+gaweeks, data = .x))) %>% 
-  mutate(rmse_reg = map2_dbl(reg_mod, test, ~rmse(model = .x, data = .y)),
-         rmse_reg1 = map2_dbl(reg1_mod, test, ~rmse(model = .x, data = .y)))
-
-cv_df %>% 
-  select(rmse_reg, rmse_reg1) %>%  
-  gather(key = model, value = rmse) %>% 
-  mutate(model = str_replace(model, "rmse_", ""),
-         model = fct_inorder(model)) %>% 
-  ggplot(aes(x = model, y = rmse)) + 
-  geom_violin()
 ```
 
 
 * One using head circumference, length, sex, and all interactions (including the three-way interaction) between these.
 
-Make this comparison in terms of the cross-validated prediction error; use crossv_mc and functions in purrr as appropriate.
 
-```{r}
+```{r head circumference length sex}
 reg2 = lm(bwt~bhead*blength*babysex, data = birthweight)
 
 summary(reg2)
 
 reg2 %>% 
   broom::tidy()
+```
 
+Make this comparison in terms of the cross-validated prediction error; use crossv_mc and functions in purrr as appropriate.
+
+```{r comparison}
 cv_df = crossv_mc(birthweight, 100) %>% 
   mutate(reg_mod = map(train, ~lm(bwt~babysex+bhead+blength+delwt+gaweeks+mheight+mrace+ppwt+smoken, data = .x)),
+         reg1_mod = map(train, ~lm(bwt~blength+gaweeks, data = .x)),
          reg2_mod = map(train, ~lm(bwt~bhead*blength*babysex, data = .x))) %>% 
   mutate(rmse_reg = map2_dbl(reg_mod, test, ~rmse(model = .x, data = .y)),
+         rmse_reg1 = map2_dbl(reg1_mod, test, ~rmse(model = .x, data = .y)),
          rmse_reg2 = map2_dbl(reg2_mod, test, ~rmse(model = .x, data = .y)))
 
 cv_df %>% 
-  select(rmse_reg, rmse_reg2) %>%  
+  select(rmse_reg, rmse_reg1, rmse_reg2) %>%  
   gather(key = model, value = rmse) %>% 
   mutate(model = str_replace(model, "rmse_", ""),
          model = fct_inorder(model)) %>% 
@@ -257,6 +250,8 @@ cv_df %>%
   geom_violin()
 ```
 
+**Comparison**
+By plotting the cross-validated prediction error distribution for each candidate model, we can see that the first fitted model has the least mean rmse compared to two others. Also, the variance of the first model is no larger than others.
 
-Note that although we expect your model to be reasonable, model building itself is not a main idea of the course and we don’t necessarily expect your model to be “optimal”.
+(Note that although we expect your model to be reasonable, model building itself is not a main idea of the course and we don’t necessarily expect your model to be “optimal”.)
 
